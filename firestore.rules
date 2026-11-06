@@ -1,0 +1,216 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string &&
+             data.voiceGangId is string && data.voiceGangId.size() == 8 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+             (!('username' in data) || (data.username is string && data.username.size() <= 40)) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 300)) &&
+             (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500)) &&
+             (!('isOnline' in data) || data.isOnline is bool) &&
+             (!('lastSeen' in data) || (data.lastSeen is timestamp && data.lastSeen <= request.time));
+    }
+
+    function isValidVoiceGangDirectory(data) {
+      return data.voiceGangId is string && data.voiceGangId.size() == 8 &&
+             data.userId is string &&
+             data.displayName is string && data.displayName.size() <= 60 &&
+             (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500));
+    }
+
+    function isValidConversation(data) {
+      return data.participantUids is list &&
+             data.participantUids.size() == 2 &&
+             (data.participantUids[0] is string) &&
+             (!('lastMessageText' in data) || (data.lastMessageText is string && data.lastMessageText.size() <= 1000));
+    }
+
+    function isValidMessage(data) {
+      return data.senderId is string &&
+             data.content is string && data.content.size() <= 5000 &&
+             data.type in ['text', 'voice', 'image', 'call_log'] &&
+             (!('mediaUrl' in data) || (data.mediaUrl is string && data.mediaUrl.size() <= 500)) &&
+             (!('durationSeconds' in data) || (data.durationSeconds is number)) &&
+             (!('isRead' in data) || data.isRead is bool);
+    }
+
+    function isValidGroup(data) {
+      return data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+             data.ownerId is string &&
+             data.memberUids is list && data.memberUids.size() <= 200 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 500)) &&
+             (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500)) &&
+             (!('isVoiceActive' in data) || data.isVoiceActive is bool);
+    }
+
+    function isValidCallRecord(data) {
+      return data.callerId is string &&
+             data.receiverId is string &&
+             data.callType in ['audio', 'video', 'group_audio', 'group_video'] &&
+             data.status in ['calling', 'ringing', 'connected', 'ended', 'rejected', 'missed'];
+    }
+
+    // USERS COLLECTION: User profiles
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().voiceGangId == existing().voiceGangId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'username', 'bio', 'avatarUrl', 'isOnline', 'lastSeen', 'updatedAt']);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // VOICE GANG ID DIRECTORY: Discover users by 8-digit unique ID
+    match /user_ids/{voiceGangId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().voiceGangId == voiceGangId &&
+                       isValidVoiceGangDirectory(incoming());
+
+      allow update: if isSignedIn() &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       isValidVoiceGangDirectory(incoming());
+
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // CONVERSATIONS: 1-on-1 Chats
+    match /conversations/{conversationId} {
+      allow get: if isSignedIn() && (request.auth.uid in existing().participantUids);
+      allow list: if isSignedIn() && (request.auth.uid in resource.data.participantUids);
+
+      allow create: if isSignedIn() &&
+                       (request.auth.uid in incoming().participantUids) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       isValidConversation(incoming());
+
+      allow update: if isSignedIn() &&
+                       (request.auth.uid in existing().participantUids) &&
+                       isValidConversation(incoming());
+
+      allow delete: if isSignedIn() && (request.auth.uid in existing().participantUids);
+
+      // Subcollection: Messages
+      match /messages/{messageId} {
+        allow get: if isSignedIn();
+        allow list: if isSignedIn();
+
+        allow create: if isSignedIn() &&
+                         incoming().senderId == request.auth.uid &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         isValidMessage(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidMessage(incoming()) &&
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['isRead', 'reactions', 'content']));
+
+        allow delete: if isSignedIn() && existing().senderId == request.auth.uid;
+      }
+    }
+
+    // GROUPS: Communities and Audio/Video Lounges
+    match /groups/{groupId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       incoming().ownerId == request.auth.uid &&
+                       (request.auth.uid in incoming().memberUids) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       isValidGroup(incoming());
+
+      allow update: if isSignedIn() &&
+                       (request.auth.uid in existing().memberUids) &&
+                       isValidGroup(incoming());
+
+      allow delete: if isSignedIn() && existing().ownerId == request.auth.uid;
+
+      // Group Messages subcollection
+      match /messages/{messageId} {
+        allow get: if isSignedIn();
+        allow list: if isSignedIn();
+
+        allow create: if isSignedIn() &&
+                         incoming().senderId == request.auth.uid &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         isValidMessage(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidMessage(incoming()) &&
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['isRead', 'reactions', 'content']));
+
+        allow delete: if isSignedIn() && existing().senderId == request.auth.uid;
+      }
+    }
+
+    // CALLS: Real-time WebRTC Signaling and Call Records
+    match /calls/{callId} {
+      allow get: if isSignedIn() && (
+        existing().callerId == request.auth.uid ||
+        existing().receiverId == request.auth.uid ||
+        (existing().isGroup == true)
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.callerId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+
+      allow create: if isSignedIn() &&
+                       incoming().callerId == request.auth.uid &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       isValidCallRecord(incoming());
+
+      allow update: if isSignedIn() && (
+                       existing().callerId == request.auth.uid ||
+                       existing().receiverId == request.auth.uid ||
+                       (existing().isGroup == true)
+                    ) &&
+                    isValidCallRecord(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['status', 'answerSdp', 'offerSdp', 'durationSeconds', 'activeParticipants', 'updatedAt']);
+
+      allow delete: if isSignedIn() && (
+        existing().callerId == request.auth.uid || existing().receiverId == request.auth.uid
+      );
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "VOICE GANG",
+  "description": "Real-time social communication platform with unique numeric IDs, real-time messaging, group voice rooms, audio/video calling, and community discovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,145 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public and private profile of a Voice Gang user with permanent 8-digit unique ID",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Auth UID of the user" },
+        "voiceGangId": { "type": "string", "description": "Permanent unique 8-digit numeric ID (e.g. 83749261)" },
+        "displayName": { "type": "string", "description": "Display name of the user" },
+        "username": { "type": "string", "description": "Optional handle tag" },
+        "bio": { "type": "string", "description": "Short bio / about info" },
+        "avatarUrl": { "type": "string", "description": "Profile picture URL or avatar preset identifier" },
+        "isOnline": { "type": "boolean", "description": "Online presence state" },
+        "lastSeen": { "type": "string", "format": "date-time", "description": "Timestamp of last activity" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account registration timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Profile modification timestamp" }
+      },
+      "required": ["userId", "voiceGangId", "displayName", "createdAt"]
+    },
+    "VoiceGangIdDirectory": {
+      "title": "VoiceGangIdDirectory",
+      "description": "Reverse lookup map from 8-digit numeric ID to user UID",
+      "type": "object",
+      "properties": {
+        "voiceGangId": { "type": "string", "description": "Unique 8-digit ID" },
+        "userId": { "type": "string", "description": "Owner Auth UID" },
+        "displayName": { "type": "string", "description": "Owner display name for quick preview" },
+        "avatarUrl": { "type": "string", "description": "Owner avatar URL" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["voiceGangId", "userId", "displayName", "createdAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Direct 1-on-1 private messaging conversation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "participantUids": { "type": "array", "description": "Array of the 2 participants" },
+        "participantNames": { "type": "object", "description": "Map of UID to display name" },
+        "lastMessageText": { "type": "string" },
+        "lastMessageSenderId": { "type": "string" },
+        "lastMessageTime": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["participantUids", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Message in direct chat or group",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string", "enum": ["text", "voice", "image", "call_log"] },
+        "mediaUrl": { "type": "string" },
+        "durationSeconds": { "type": "number" },
+        "replyToMessageId": { "type": "string" },
+        "reactions": { "type": "object" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "content", "type", "createdAt"]
+    },
+    "Group": {
+      "title": "Group",
+      "description": "Voice Gang group or community room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "adminUids": { "type": "array" },
+        "activeRoomId": { "type": "string" },
+        "isVoiceActive": { "type": "boolean" },
+        "activeSpeakers": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerId", "memberUids", "createdAt"]
+    },
+    "CallRecord": {
+      "title": "CallRecord",
+      "description": "Real-time WebRTC calling signaling session and call history record",
+      "type": "object",
+      "properties": {
+        "callId": { "type": "string" },
+        "callerId": { "type": "string" },
+        "callerName": { "type": "string" },
+        "callerVoiceGangId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "receiverVoiceGangId": { "type": "string" },
+        "callType": { "type": "string", "enum": ["audio", "video", "group_audio", "group_video"] },
+        "status": { "type": "string", "enum": ["calling", "ringing", "connected", "ended", "rejected", "missed"] },
+        "offerSdp": { "type": "string" },
+        "answerSdp": { "type": "string" },
+        "durationSeconds": { "type": "number" },
+        "isGroup": { "type": "boolean" },
+        "groupId": { "type": "string" },
+        "activeParticipants": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["callerId", "receiverId", "callType", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile with permanent Voice Gang ID"
+    },
+    "/user_ids/{voiceGangId}": {
+      "schema": { "$ref": "#/entities/VoiceGangIdDirectory" },
+      "description": "Public directory for user discovery by 8-digit unique ID"
+    },
+    "/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "1-on-1 Direct conversations"
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages inside direct conversation"
+    },
+    "/groups/{groupId}": {
+      "schema": { "$ref": "#/entities/Group" },
+      "description": "Community groups and audio lounges"
+    },
+    "/groups/{groupId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages inside group chat"
+    },
+    "/calls/{callId}": {
+      "schema": { "$ref": "#/entities/CallRecord" },
+      "description": "Signaling and call session records for direct and group audio/video calls"
+    }
+  }
+}
